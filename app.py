@@ -5,20 +5,20 @@ from bs4 import BeautifulSoup
 from datetime import datetime
 import plotly.express as px
 import re
+import json
 
 st.set_page_config(page_title="Malaysia Distress Sales Tracker", layout="wide")
 
 st.title("🛡️ Malaysia Distress Sales Tracker")
-st.markdown("**Nationwide • Adjustable Locations • Automatic History**")
+st.markdown("**Nationwide • Adjustable • Automatic History**")
 
-# ================== SECURE ADMIN PASSWORD (from Streamlit Secrets) ==================
+# ================== SECURE ADMIN PASSWORD ==================
 if "admin_authenticated" not in st.session_state:
     st.session_state.admin_authenticated = False
 
-# Get password from secrets (we will set this in Streamlit Cloud)
 ADMIN_PASSWORD = st.secrets.get("ADMIN_PASSWORD", "change_me_in_secrets")
 
-password_input = st.text_input("🔑 Admin Password (to edit fuel prices later)", type="password")
+password_input = st.text_input("🔑 Admin Password (to edit fuel prices)", type="password")
 
 if password_input:
     if password_input == ADMIN_PASSWORD:
@@ -27,25 +27,63 @@ if password_input:
     else:
         st.error("❌ Wrong password")
 
-# ================== FUEL PRICES WIDGET (BUDI vs Non-BUDI) ==================
-st.subheader("⛽ Malaysia Fuel Prices (26 Mar – 1 Apr 2026)")
+# ================== FUEL PRICES MANAGEMENT ==================
+FUEL_FILE = "fuel_prices.json"
 
+# Load or create default fuel prices
+if "fuel_prices" not in st.session_state:
+    try:
+        with open(FUEL_FILE, "r") as f:
+            st.session_state.fuel_prices = json.load(f)
+    except:
+        st.session_state.fuel_prices = {
+            "budi95": "RM1.99",
+            "non_budi95": "RM3.87",
+            "ron97": "RM5.15",
+            "diesel_peninsular": "RM5.52",
+            "diesel_east": "RM2.15",
+            "last_updated": "26 Mar – 1 Apr 2026"
+        }
+
+# Display Fuel Widget
+st.subheader("⛽ Malaysia Fuel Prices")
 col1, col2, col3 = st.columns(3)
 with col1:
-    st.metric("RON95 BUDI95 (Subsidised)", "RM1.99", "unchanged")
-    st.metric("RON95 (Unsubsidised / Non-BUDI)", "RM3.87", "+60 sen")
-
+    st.metric("RON95 BUDI95 (Subsidised)", st.session_state.fuel_prices["budi95"])
+    st.metric("RON95 (Unsubsidised / Non-BUDI)", st.session_state.fuel_prices["non_budi95"])
 with col2:
-    st.metric("RON97", "RM5.15", "+60 sen")
-
+    st.metric("RON97", st.session_state.fuel_prices["ron97"])
 with col3:
-    st.metric("Diesel - Peninsular", "RM5.52", "+80 sen")
-    st.metric("Diesel - East Malaysia", "RM2.15", "unchanged")
+    st.metric("Diesel - Peninsular", st.session_state.fuel_prices["diesel_peninsular"])
+    st.metric("Diesel - East Malaysia", st.session_state.fuel_prices["diesel_east"])
 
-st.caption("Source: Ministry of Finance / PETRONAS • Updated weekly")
+st.caption(f"Last updated: {st.session_state.fuel_prices['last_updated']} • Source: Ministry of Finance / PETRONAS")
 
+# Admin Fuel Editor
 if st.session_state.admin_authenticated:
-    st.info("🔓 Admin mode active — Fuel price editor will be added in next phase.")
+    st.subheader("✏️ Edit Fuel Prices (Admin Only)")
+    with st.form("fuel_form"):
+        budi95 = st.text_input("RON95 BUDI95 (Subsidised)", st.session_state.fuel_prices["budi95"])
+        non_budi95 = st.text_input("RON95 (Unsubsidised / Non-BUDI)", st.session_state.fuel_prices["non_budi95"])
+        ron97 = st.text_input("RON97", st.session_state.fuel_prices["ron97"])
+        diesel_pen = st.text_input("Diesel - Peninsular", st.session_state.fuel_prices["diesel_peninsular"])
+        diesel_east = st.text_input("Diesel - East Malaysia", st.session_state.fuel_prices["diesel_east"])
+        last_updated = st.text_input("Last Updated (e.g. 2 Apr – 8 Apr 2026)", st.session_state.fuel_prices["last_updated"])
+        
+        submitted = st.form_submit_button("Save Fuel Prices")
+        if submitted:
+            st.session_state.fuel_prices = {
+                "budi95": budi95,
+                "non_budi95": non_budi95,
+                "ron97": ron97,
+                "diesel_peninsular": diesel_pen,
+                "diesel_east": diesel_east,
+                "last_updated": last_updated
+            }
+            with open(FUEL_FILE, "w") as f:
+                json.dump(st.session_state.fuel_prices, f)
+            st.success("✅ Fuel prices updated successfully!")
+            st.rerun()
 
 # ================== CONFIG ==================
 KEYWORDS = ["urgent", "cepat jual", "terdesak", "jual murah", "harga rendah", 
@@ -76,7 +114,7 @@ track_vehicles = st.sidebar.checkbox("Track Vehicles", value=True)
 
 run_button = st.sidebar.button("🚀 Run Fresh Scan Now", type="primary")
 
-# ================== HISTORY MANAGEMENT ==================
+# ================== HISTORY ==================
 CSV_FILE = "history.csv"
 
 if "history_df" not in st.session_state:
@@ -103,11 +141,9 @@ def scrape_mudah(location_slug, category):
         r = requests.get(url, headers=headers, timeout=15)
         soup = BeautifulSoup(r.text, "html.parser")
         
-        # Better total count detection
         total_match = re.search(r'(\d{1,3}(?:,\d{3})*)\s*(?:result|listing|found|ads)', r.text, re.I)
         total = int(total_match.group(1).replace(',', '')) if total_match else 0
         
-        # Rough distress detection
         distress_count = sum(1 for kw in KEYWORDS if kw in r.text.lower())
         
         return {
@@ -166,6 +202,6 @@ with tab2:
         st.plotly_chart(fig, use_container_width=True)
         st.download_button("📥 Download Full History CSV", st.session_state.history_df.to_csv(index=False), "malaysia_distress_history.csv")
     else:
-        st.info("Run a few scans to build history and see trends.")
+        st.info("Run scans to build history.")
 
-st.caption("Phase 5 Secure Version • Password managed via Streamlit Secrets")
+st.caption("Phase 6 • Fuel editor added • Password secured via Secrets")

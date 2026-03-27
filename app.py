@@ -9,16 +9,17 @@ import re
 st.set_page_config(page_title="Malaysia Distress Sales Tracker", layout="wide")
 
 st.title("🛡️ Malaysia Distress Sales Tracker")
-st.markdown("**Nationwide • Adjustable • Automatic History**")
+st.markdown("**Nationwide • Adjustable Locations • Automatic History**")
 
-# ================== PASSWORD PROTECTION FOR FUEL EDITING ==================
+# ================== SECURE ADMIN PASSWORD (from Streamlit Secrets) ==================
 if "admin_authenticated" not in st.session_state:
     st.session_state.admin_authenticated = False
 
-ADMIN_PASSWORD = "sarawak2026"   # ← CHANGE THIS TO YOUR OWN STRONG PASSWORD
+# Get password from secrets (we will set this in Streamlit Cloud)
+ADMIN_PASSWORD = st.secrets.get("ADMIN_PASSWORD", "change_me_in_secrets")
 
-# Simple password input at the top
-password_input = st.text_input("🔑 Admin Password (to edit fuel prices)", type="password")
+password_input = st.text_input("🔑 Admin Password (to edit fuel prices later)", type="password")
+
 if password_input:
     if password_input == ADMIN_PASSWORD:
         st.session_state.admin_authenticated = True
@@ -44,7 +45,7 @@ with col3:
 st.caption("Source: Ministry of Finance / PETRONAS • Updated weekly")
 
 if st.session_state.admin_authenticated:
-    st.info("You are in admin mode. You can edit fuel prices here in the next phase.")
+    st.info("🔓 Admin mode active — Fuel price editor will be added in next phase.")
 
 # ================== CONFIG ==================
 KEYWORDS = ["urgent", "cepat jual", "terdesak", "jual murah", "harga rendah", 
@@ -63,7 +64,7 @@ LOCATIONS = {
 }
 
 # ================== SIDEBAR ==================
-st.sidebar.header("🎛️ Settings")
+st.sidebar.header("🎛️ Monitoring Settings")
 selected_locations = st.sidebar.multiselect(
     "Select locations to track",
     options=list(LOCATIONS.keys()),
@@ -75,7 +76,7 @@ track_vehicles = st.sidebar.checkbox("Track Vehicles", value=True)
 
 run_button = st.sidebar.button("🚀 Run Fresh Scan Now", type="primary")
 
-# ================== HISTORY ==================
+# ================== HISTORY MANAGEMENT ==================
 CSV_FILE = "history.csv"
 
 if "history_df" not in st.session_state:
@@ -90,39 +91,38 @@ if "history_df" not in st.session_state:
 def save_history():
     st.session_state.history_df.to_csv(CSV_FILE, index=False)
 
-# ================== IMPROVED SCRAPE FUNCTION ==================
+# ================== SCRAPE FUNCTION ==================
 def scrape_mudah(location_slug, category):
     if category == "Properties":
         url = f"https://www.mudah.my/{location_slug}/properties-for-sale"
     else:
         url = f"https://www.mudah.my/{location_slug}/cars-for-sale"
     
-    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
     try:
-        r = requests.get(url, headers=headers, timeout=12)
+        r = requests.get(url, headers=headers, timeout=15)
         soup = BeautifulSoup(r.text, "html.parser")
         
         # Better total count detection
-        total_match = re.search(r'(\d{1,3}(?:,\d{3})*)\s*(?:result|listing|found)', r.text, re.I)
+        total_match = re.search(r'(\d{1,3}(?:,\d{3})*)\s*(?:result|listing|found|ads)', r.text, re.I)
         total = int(total_match.group(1).replace(',', '')) if total_match else 0
         
-        # Rough distress count from first page
+        # Rough distress detection
         distress_count = sum(1 for kw in KEYWORDS if kw in r.text.lower())
         
         return {
             "total": total,
             "private": 0,
             "new_24h": 0,
-            "distress_ads": min(distress_count, 10),  # cap to avoid false high
+            "distress_ads": min(distress_count, 15),
             "median_price": None
         }
-    except Exception as e:
-        st.warning(f"Scraping issue for {location_slug}: {str(e)[:100]}")
+    except:
         return {"total": 0, "private": 0, "new_24h": 0, "distress_ads": 0, "median_price": None}
 
 # ================== RUN SCAN ==================
 if run_button and selected_locations:
-    with st.spinner("Scanning Mudah.my... This may take 15-30 seconds"):
+    with st.spinner("Scanning Mudah.my... (15-40 seconds)"):
         today = datetime.now().strftime("%d-%b-%Y")
         new_rows = []
         
@@ -166,6 +166,6 @@ with tab2:
         st.plotly_chart(fig, use_container_width=True)
         st.download_button("📥 Download Full History CSV", st.session_state.history_df.to_csv(index=False), "malaysia_distress_history.csv")
     else:
-        st.info("Run scans to build history and see trends.")
+        st.info("Run a few scans to build history and see trends.")
 
-st.caption("Phase 5 • Password: sarawak2026 (change it in code) • Fuel editing coming next")
+st.caption("Phase 5 Secure Version • Password managed via Streamlit Secrets")

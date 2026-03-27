@@ -10,7 +10,7 @@ import json
 st.set_page_config(page_title="Malaysia Distress Sales Tracker", layout="wide")
 
 st.title("🛡️ Malaysia Distress Sales Tracker")
-st.markdown("**Nationwide • Adjustable • Automatic History**")
+st.markdown("**Nationwide • Adjustable Locations • Automatic History**")
 
 # ================== ADMIN AUTHENTICATION ==================
 if "admin_authenticated" not in st.session_state:
@@ -18,29 +18,29 @@ if "admin_authenticated" not in st.session_state:
 
 ADMIN_PASSWORD = st.secrets.get("ADMIN_PASSWORD", "change_me_in_secrets")
 
-col_login, col_logout = st.columns([4, 1])
-with col_login:
-    password_input = st.text_input("🔑 Admin Password", type="password", key="pw_input")
-
-with col_logout:
-    if st.session_state.admin_authenticated:
-        if st.button("Logout", type="secondary"):
+# Login / Logout Area
+if st.session_state.admin_authenticated:
+    col1, col2 = st.columns([5, 1])
+    with col1:
+        st.success("✅ Logged in as Admin")
+    with col2:
+        if st.button("🚪 Logout", type="secondary"):
             st.session_state.admin_authenticated = False
             st.rerun()
+else:
+    password_input = st.text_input("🔑 Admin Password (to edit fuel prices)", type="password", key="pw_input")
+    if password_input:
+        if password_input == ADMIN_PASSWORD:
+            st.session_state.admin_authenticated = True
+            st.success("✅ Admin access granted")
+            st.rerun()
+        else:
+            st.error("❌ Wrong password")
 
-if password_input and not st.session_state.admin_authenticated:
-    if password_input == ADMIN_PASSWORD:
-        st.session_state.admin_authenticated = True
-        st.success("✅ Admin access granted")
-        st.rerun()
-    else:
-        st.error("❌ Wrong password")
-
-# ================== FUEL PRICES + FUEL HISTORY ==================
+# ================== FUEL PRICES + HISTORY ==================
 FUEL_FILE = "fuel_prices.json"
 FUEL_HISTORY_FILE = "fuel_history.csv"
 
-# Load current fuel prices
 if "fuel_prices" not in st.session_state:
     try:
         with open(FUEL_FILE, "r") as f:
@@ -52,7 +52,6 @@ if "fuel_prices" not in st.session_state:
             "last_updated": "26 Mar – 1 Apr 2026"
         }
 
-# Load fuel history
 if "fuel_history_df" not in st.session_state:
     try:
         st.session_state.fuel_history_df = pd.read_csv(FUEL_HISTORY_FILE)
@@ -60,7 +59,7 @@ if "fuel_history_df" not in st.session_state:
         st.session_state.fuel_history_df = pd.DataFrame(columns=["date", "budi95", "non_budi95", "ron97", 
                                                                  "diesel_peninsular", "diesel_east", "last_updated"])
 
-# Display Current Fuel Widget
+# Current Fuel Display
 st.subheader("⛽ Current Malaysia Fuel Prices")
 col1, col2, col3 = st.columns(3)
 with col1:
@@ -73,7 +72,7 @@ with col3:
     st.metric("Diesel - East Malaysia", st.session_state.fuel_prices["diesel_east"])
 st.caption(f"Last updated: {st.session_state.fuel_prices['last_updated']}")
 
-# Admin Fuel Editor + Save to History
+# Fuel Editor
 if st.session_state.admin_authenticated:
     st.subheader("✏️ Edit Fuel Prices (Admin Only)")
     with st.form("fuel_form"):
@@ -82,11 +81,10 @@ if st.session_state.admin_authenticated:
         ron97 = st.text_input("RON97", st.session_state.fuel_prices["ron97"])
         diesel_pen = st.text_input("Diesel - Peninsular", st.session_state.fuel_prices["diesel_peninsular"])
         diesel_east = st.text_input("Diesel - East Malaysia", st.session_state.fuel_prices["diesel_east"])
-        last_updated = st.text_input("Last Updated (e.g. 2 Apr – 8 Apr 2026)", st.session_state.fuel_prices["last_updated"])
+        last_updated = st.text_input("Last Updated", st.session_state.fuel_prices["last_updated"])
         
         submitted = st.form_submit_button("💾 Save Fuel Prices")
         if submitted:
-            # Save current prices
             st.session_state.fuel_prices = {
                 "budi95": budi95, "non_budi95": non_budi95, "ron97": ron97,
                 "diesel_peninsular": diesel_pen, "diesel_east": diesel_east,
@@ -111,7 +109,7 @@ if st.session_state.admin_authenticated:
             st.success("✅ Fuel prices updated and saved to history!")
             st.rerun()
 
-# ================== CONFIG ==================
+# ================== LISTINGS CONFIG & SCAN ==================
 KEYWORDS = ["urgent", "cepat jual", "terdesak", "jual murah", "harga rendah", 
             "motivated seller", "quick sale", "must sell", "owner needs cash", "distress"]
 
@@ -127,7 +125,6 @@ LOCATIONS = {
     "Malaysia (Nationwide)": "malaysia"
 }
 
-# ================== SIDEBAR ==================
 st.sidebar.header("🎛️ Monitoring Settings")
 selected_locations = st.sidebar.multiselect(
     "Select locations to track",
@@ -140,9 +137,8 @@ track_vehicles = st.sidebar.checkbox("Track Vehicles", value=True)
 
 run_button = st.sidebar.button("🚀 Run Fresh Scan Now", type="primary")
 
-# ================== LISTINGS HISTORY ==================
+# Listings History
 CSV_FILE = "history.csv"
-
 if "history_df" not in st.session_state:
     try:
         st.session_state.history_df = pd.read_csv(CSV_FILE)
@@ -155,7 +151,6 @@ if "history_df" not in st.session_state:
 def save_history():
     st.session_state.history_df.to_csv(CSV_FILE, index=False)
 
-# ================== SCRAPE FUNCTION ==================
 def scrape_mudah(location_slug, category):
     if category == "Properties":
         url = f"https://www.mudah.my/{location_slug}/properties-for-sale"
@@ -166,12 +161,9 @@ def scrape_mudah(location_slug, category):
     try:
         r = requests.get(url, headers=headers, timeout=15)
         soup = BeautifulSoup(r.text, "html.parser")
-        
         total_match = re.search(r'(\d{1,3}(?:,\d{3})*)\s*(?:result|listing|found|ads)', r.text, re.I)
         total = int(total_match.group(1).replace(',', '')) if total_match else 0
-        
         distress_count = sum(1 for kw in KEYWORDS if kw in r.text.lower())
-        
         return {
             "total": total,
             "private": 0,
@@ -182,12 +174,10 @@ def scrape_mudah(location_slug, category):
     except:
         return {"total": 0, "private": 0, "new_24h": 0, "distress_ads": 0, "median_price": None}
 
-# ================== RUN SCAN ==================
 if run_button and selected_locations:
     with st.spinner("Scanning Mudah.my..."):
         today = datetime.now().strftime("%d-%b-%Y")
         new_rows = []
-        
         for loc_display in selected_locations:
             slug = LOCATIONS[loc_display]
             if track_properties:
@@ -226,7 +216,7 @@ with tab2:
         st.dataframe(st.session_state.history_df.sort_values("date", ascending=False))
         fig = px.line(st.session_state.history_df, x="date", y="total", color="location", title="Total Listings Trend")
         st.plotly_chart(fig, use_container_width=True)
-        st.download_button("📥 Download Listings History CSV", st.session_state.history_df.to_csv(index=False), "listings_history.csv")
+        st.download_button("📥 Download Listings History", st.session_state.history_df.to_csv(index=False), "listings_history.csv")
     else:
         st.info("Run scans to build listings history.")
 
@@ -234,8 +224,8 @@ with tab3:
     st.header("⛽ Fuel Price History")
     if not st.session_state.fuel_history_df.empty:
         st.dataframe(st.session_state.fuel_history_df.sort_values("date", ascending=False))
-        st.download_button("📥 Download Fuel History CSV", st.session_state.fuel_history_df.to_csv(index=False), "fuel_history.csv")
+        st.download_button("📥 Download Fuel History", st.session_state.fuel_history_df.to_csv(index=False), "fuel_history.csv")
     else:
-        st.info("Save fuel prices a few times to see history here.")
+        st.info("Save fuel prices a few times to build fuel history.")
 
-st.caption("Phase 8 • Fuel price history added • Logout button included")
+st.caption("Phase 9 • Logout fixed • Fuel history included")

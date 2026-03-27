@@ -10,27 +10,36 @@ import json
 st.set_page_config(page_title="Malaysia Distress Sales Tracker", layout="wide")
 
 st.title("🛡️ Malaysia Distress Sales Tracker")
-st.markdown("**Nationwide • Adjustable • Automatic History**")
+st.markdown("**Nationwide • Adjustable Locations • Automatic History**")
 
-# ================== SECURE ADMIN PASSWORD ==================
+# ================== ADMIN AUTHENTICATION ==================
 if "admin_authenticated" not in st.session_state:
     st.session_state.admin_authenticated = False
 
 ADMIN_PASSWORD = st.secrets.get("ADMIN_PASSWORD", "change_me_in_secrets")
 
-password_input = st.text_input("🔑 Admin Password (to edit fuel prices)", type="password")
+col_login, col_logout = st.columns([4, 1])
 
-if password_input:
+with col_login:
+    password_input = st.text_input("🔑 Admin Password (to edit fuel prices)", type="password", key="pw_input")
+
+with col_logout:
+    if st.session_state.admin_authenticated:
+        if st.button("Logout", type="secondary"):
+            st.session_state.admin_authenticated = False
+            st.rerun()
+
+if password_input and not st.session_state.admin_authenticated:
     if password_input == ADMIN_PASSWORD:
         st.session_state.admin_authenticated = True
         st.success("✅ Admin access granted")
+        st.rerun()
     else:
         st.error("❌ Wrong password")
 
 # ================== FUEL PRICES MANAGEMENT ==================
 FUEL_FILE = "fuel_prices.json"
 
-# Load or create default fuel prices
 if "fuel_prices" not in st.session_state:
     try:
         with open(FUEL_FILE, "r") as f:
@@ -70,7 +79,7 @@ if st.session_state.admin_authenticated:
         diesel_east = st.text_input("Diesel - East Malaysia", st.session_state.fuel_prices["diesel_east"])
         last_updated = st.text_input("Last Updated (e.g. 2 Apr – 8 Apr 2026)", st.session_state.fuel_prices["last_updated"])
         
-        submitted = st.form_submit_button("Save Fuel Prices")
+        submitted = st.form_submit_button("💾 Save Fuel Prices")
         if submitted:
             st.session_state.fuel_prices = {
                 "budi95": budi95,
@@ -204,4 +213,4 @@ with tab2:
     else:
         st.info("Run scans to build history.")
 
-st.caption("Phase 6 • Fuel editor added • Password secured via Secrets")
+st.caption("Final Version • Logout button added • Fuel editor secured")
